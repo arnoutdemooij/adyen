@@ -104,6 +104,15 @@ class Adyen::Configuration
   # @return [String]
   attr_accessor :ipn_password
 
+  # type of HMAC calculation for HPP
+  #
+  # @example
+  #   Adyen.configuration.hmac_payment_setup = :sha_1 (default)
+  #   Adyen.configuration.hmac_payment_setup = :sha_256 (recommended by Adyen)
+  #
+  # @return [String]
+  attr_accessor :hmac_payment_setup
+
   ######################################################
   # SKINS
   ######################################################

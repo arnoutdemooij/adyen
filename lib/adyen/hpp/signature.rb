@@ -13,7 +13,7 @@ module Adyen
       #   params hash with the `sharedSecret` key.
       # @return [Hash] params The params that were passed in plus a new `merchantSig` param
       def sign(params, shared_secret = nil)
-        shared_secret ||= params.delete['sharedSecret']
+        shared_secret ||= params.delete('sharedSecret')
         raise ArgumentError, "Cannot verify a signature without a shared secret" unless shared_secret
         sig = OpenSSL::HMAC.digest(OpenSSL::Digest.new('sha256'), Array(shared_secret).pack("H*"), string_to_sign(params))
         params.merge('merchantSig' => Base64.encode64(sig).strip)

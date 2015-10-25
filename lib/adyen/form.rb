@@ -112,25 +112,41 @@ module Adyen
       raise ArgumentError, "Cannot generate form: :skin_code attribute not found!"             unless parameters[:skin_code]
 
       # Calculate the merchant signature using the shared secret.
-      shared_secret ||= parameters.delete(:shared_secret)
-      raise ArgumentError, "Cannot calculate payment request signature without shared secret!" unless shared_secret
-      parameters[:merchant_sig] = calculate_signature(parameters, shared_secret)
+      # NB For sha-256 payment setup, the signature is calculated after flattening the parameters
+      unless Adyen.configuration.hmac_payment_setup == :sha_256
+        shared_secret ||= parameters.delete(:shared_secret)
+        raise ArgumentError, "Cannot calculate payment request signature without shared secret!" unless shared_secret
 
-      if parameters[:billing_address]
-        parameters[:billing_address_sig] = calculate_billing_address_signature(parameters, shared_secret)
-      end
+        parameters[:merchant_sig] = calculate_signature(parameters, shared_secret)
 
-      if parameters[:shopper]
-        parameters[:shopper_sig] = calculate_shopper_signature(parameters, shared_secret)
+        if parameters[:billing_address]
+          parameters[:billing_address_sig] = calculate_billing_address_signature(parameters, shared_secret)
+        end
+
+        if parameters[:shopper]
+          parameters[:shopper_sig] = calculate_shopper_signature(parameters, shared_secret)
+        end
       end
 
       return parameters
     end
 
-    # Transforms and flattens payment parameters to be in the correct format which is understood and accepted by adyen
+    # Payment parameters including HMAC signature
     #
     # @param [Hash] parameters The payment parameters. The parameters set in the
     #    {Adyen::Configuration#default_form_params} hash will be included automatically.
+    # @return [Hash] Flattened payment parameters including signature(s)
+    def signed_payment_parameters(parameters = {})
+      if Adyen.configuration.hmac_payment_setup == :sha_256
+        Adyen::HPP::Signature.sign(flat_payment_parameters(parameters))
+      else
+        flat_payment_parameters(parameters)
+      end
+    end
+
+    # Transforms and flattens payment parameters to be in the correct format which is understood and accepted by adyen
+    #
+    # @param [Hash] parameters The payment parameters.
     # @return [Hash] The payment parameters flatten, with camelized and prefixed key, stringified value
     def flat_payment_parameters(parameters = {})
       Adyen::Util.flatten(payment_parameters(parameters))
@@ -165,7 +181,7 @@ module Adyen
     # @param [Hash] parameters The payment parameters to include in the payment request.
     # @return [String] An absolute URL to redirect to the Adyen payment system.
     def redirect_url(parameters = {})
-      url + '?' + flat_payment_parameters(parameters).map { |(k, v)|
+      url + '?' + signed_payment_parameters(parameters).map { |(k, v)|
         "#{k}=#{CGI.escape(v)}"
       }.join('&')
     end
@@ -179,7 +195,7 @@ module Adyen
     # @param [Hash] parameters The payment parameters to include in the payment request.
     # @return [String] An absolute URL to redirect to the Adyen payment system.
     def payment_methods_url(parameters = {})
-      url(nil, :directory) + '?' + flat_payment_parameters(parameters).map { |(k, v)|
+      url(nil, :directory) + '?' + signed_payment_parameters(parameters).map { |(k, v)|
         "#{k}=#{CGI.escape(v)}"
       }.join('&')
     end
@@ -208,7 +224,7 @@ module Adyen
     def hidden_fields(parameters = {})
 
       # Generate a hidden input tag per parameter, join them by newlines.
-      form_str = flat_payment_parameters(parameters).map { |key, value|
+      form_str = signed_payment_parameters(parameters).map { |key, value|
         "<input type=\"hidden\" name=\"#{CGI.escapeHTML(key)}\" value=\"#{CGI.escapeHTML(value)}\" />"
       }.join("\n")
 
@@ -216,7 +232,7 @@ module Adyen
     end
 
     ######################################################
-    # MERCHANT SIGNATURE CALCULATION
+    # MERCHANT SIGNATURE CALCULATION (SHA-1)
     ######################################################
 
     # Generates the string that is used to calculate the request signature. This signature
@@ -300,7 +316,7 @@ module Adyen
     end
 
     ######################################################
-    # REDIRECT SIGNATURE CHECKING
+    # REDIRECT SIGNATURE CHECKING (SHA-1)
     ######################################################
 
     # Generates the string for which the redirect signature is calculated, using the request paramaters.

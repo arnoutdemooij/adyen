@@ -80,37 +80,45 @@ class FormTest < Minitest::Test
   end
 
   def test_redirect_url_generation
-    attributes = { 
-      :currency_code => 'GBP', :payment_amount => 10000, :ship_before_date => Date.today,
-      :merchant_reference => 'Internet Order 12345', :skin => :testing, :session_validity => Time.now + 3600 
-    }
+    [:sha_1, :sha_256].each do |hmac_payment_setup|
+      Adyen.configuration.hmac_payment_setup = hmac_payment_setup
 
-    redirect_uri = URI(Adyen::Form.redirect_url(attributes))
-    assert_match %r[^#{Adyen::Form.url}], redirect_uri.to_s
+      attributes = {
+        :currency_code => 'GBP', :payment_amount => 10000, :ship_before_date => Date.today,
+        :merchant_reference => 'Internet Order 12345', :skin => :testing, :session_validity => Time.now + 3600
+      }
 
-    params = CGI.parse(redirect_uri.query)
-    attributes.each do |key, value|
-      assert_equal value.to_s, params[Adyen::Util.camelize(key).to_s].first
+      redirect_uri = URI(Adyen::Form.redirect_url(attributes))
+      assert_match %r[^#{Adyen::Form.url}], redirect_uri.to_s
+
+      params = CGI.parse(redirect_uri.query)
+      attributes.each do |key, value|
+        assert_equal value.to_s, params[Adyen::Util.camelize(key).to_s].first unless key == :shared_secret
+      end
+
+      assert params.key?('merchantSig'), "Expected a merchantSig parameter to be set"
     end
-
-    assert params.key?('merchantSig'), "Expected a merchantSig parameter to be set"
   end
 
   def test_payment_methods_url_generation
-    attributes = { 
-      :currency_code => 'GBP', :payment_amount => 10000, :ship_before_date => Date.today,
-      :merchant_reference => 'Internet Order 12345', :skin => :testing, :session_validity => Time.now + 3600 
-    }
+    [:sha_1, :sha_256].each do |hmac_payment_setup|
+      Adyen.configuration.hmac_payment_setup = hmac_payment_setup
 
-    redirect_uri = URI(Adyen::Form.payment_methods_url(attributes))
-    assert_match %r[^#{Adyen::Form.url(nil, :directory)}], redirect_uri.to_s
+      attributes = {
+        :currency_code => 'GBP', :payment_amount => 10000, :ship_before_date => Date.today,
+        :merchant_reference => 'Internet Order 12345', :skin => :testing, :session_validity => Time.now + 3600
+      }
 
-    params = CGI.parse(redirect_uri.query)
-    attributes.each do |key, value|
-      assert_equal value.to_s, params[Adyen::Util.camelize(key).to_s].first
+      redirect_uri = URI(Adyen::Form.payment_methods_url(attributes))
+      assert_match %r[^#{Adyen::Form.url(nil, :directory)}], redirect_uri.to_s
+
+      params = CGI.parse(redirect_uri.query)
+      attributes.each do |key, value|
+        assert_equal value.to_s, params[Adyen::Util.camelize(key).to_s].first unless key == :shared_secret
+      end
+
+      assert params.key?('merchantSig'), "Expected a merchantSig parameter to be set"
     end
-
-    assert params.key?('merchantSig'), "Expected a merchantSig parameter to be set"
   end  
 
   def test_redirect_signature_string
@@ -151,6 +159,7 @@ class FormTest < Minitest::Test
   end
 
   def test_billing_address_and_shopper_signature_in_redirect_url
+    return if Adyen.configuration.hmac_payment_setup == :sha_256
     get_params = CGI.parse(URI(Adyen::Form.redirect_url(@payment_attributes)).query)
     assert_equal '5KQb7VJq4cz75cqp11JDajntCY4=', get_params['billingAddressSig'].first
     assert_equal 'rb2GEs1kGKuLh255a3QRPBYXmsQ=', get_params['shopperSig'].first
